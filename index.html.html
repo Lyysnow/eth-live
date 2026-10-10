@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101820">
+<title>ETH 实时行情面板</title>
+<style>
+:root{color-scheme:dark;--bg:#101820;--panel:#192630;--muted:#9fb0bd;--text:#eef5f8;--line:#2d414e;--green:#3bd6a0;--red:#ff737d;--blue:#75baff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:900px;margin:auto;padding:18px}h1{font-size:23px;margin:4px 0 8px}.sub{color:var(--muted);font-size:13px;line-height:1.6}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:14px}
+.price{font-size:34px;font-weight:750;letter-spacing:-1px}.row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}.stat{background:#12202a;border-radius:10px;padding:11px}.label{font-size:12px;color:var(--muted)}.val{font-size:16px;font-weight:650;margin-top:5px}
+button{border:0;border-radius:10px;background:#dceeff;color:#10202b;padding:12px 14px;font-weight:700;font-size:14px;cursor:pointer}button.secondary{background:#2a3b47;color:var(--text);border:1px solid #405562}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.tab{padding:8px 13px;background:#243641;color:var(--text);border:1px solid var(--line);border-radius:9px}.tab.active{background:#dceeff;color:#10202b}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:right;padding:9px 5px;border-bottom:1px solid var(--line);white-space:nowrap}th:first-child,td:first-child{text-align:left}th{color:var(--muted);font-weight:500}
+.up{color:var(--green)}.down{color:var(--red)}.status{font-size:12px;color:var(--muted);margin-top:8px}.error{color:#ffb1b6}.hint{font-size:13px;line-height:1.7;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#0d151b;border-radius:10px;padding:12px;max-height:250px;overflow:auto;font-size:12px}
+@media(max-width:540px){main{padding:12px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.price{font-size:30px}.panel{padding:13px}button{width:100%}.row.buttons{align-items:stretch}}
+</style>
+</head>
+<body>
+<main>
+  <h1>ETH-USDT-SWAP 实时行情</h1>
+  <div class="sub">读取 OKX 公开市场数据 · 无需登录、API Key 或交易权限</div>
+  <section class="panel">
+    <div class="row">
+      <div>
+        <div class="label">最新成交价（USDT）</div>
+        <div class="price" id="price">加载中…</div>
+        <div class="status" id="updated">正在连接 OKX</div>
+      </div>
+      <div style="min-width:130px;text-align:right">
+        <div class="label">24小时涨跌</div>
+        <div class="val" id="change">—</div>
+        <div class="label" style="margin-top:12px">24小时成交量</div>
+        <div class="val" id="vol">—</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">24h最高</div><div class="val" id="high">—</div></div>
+      <div class="stat"><div class="label">24h最低</div><div class="val" id="low">—</div></div>
+      <div class="stat"><div class="label">买一 / 卖一</div><div class="val" id="bidask">—</div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row"><strong>K线数据</strong><span class="label">每15秒刷新</span></div>
+    <div class="tabs">
+      <button class="tab active" data-bar="5m">5分钟</button>
+      <button class="tab" data-bar="15m">15分钟</button>
+      <button class="tab" data-bar="1H">1小时</button>
+      <button class="tab" data-bar="4H">4小时</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>时间</th><th>开</th><th>高</th><th>低</th><th>收</th><th>成交量(张)</th></tr></thead>
+        <tbody id="candles"><tr><td colspan="6" style="text-align:center">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="status" id="candleStatus">—</div>
+  </section>
+
+  <section class="panel">
+    <strong>发给 ChatGPT 分析</strong>
+    <p class="hint">点击下面的按钮，把最新行情摘要复制到剪贴板，然后回到 ChatGPT 粘贴发送。我不会自动收到这个网页的数据；需要你主动粘贴。</p>
+    <div class="row buttons">
+      <button id="copy">复制行情摘要</button>
+      <button class="secondary" id="refresh">立即刷新</button>
+    </div>
+    <div class="status" id="copyStatus"></div>
+    <details style="margin-top:12px"><summary style="cursor:pointer">查看将要复制的数据</summary><pre id="summary">等待行情数据…</pre></details>
+  </section>
+  <p class="hint">如果行情无法加载，可能是网络或浏览器跨域限制。数据来自 OKX 公共行情 API；页面不连接你的交易账户，也不会下单。市场数据可能存在网络延迟，不能保证零延迟。</p>
+</main>
+<script>
+const BASE='https://www.okx.com/api/v5/market/';
+let selectedBar='5m', ticker=null, candleRows=[];
+const $=id=>document.getElementById(id);
+const fmt=(x,n=2)=>Number(x).toLocaleString('en-US',{minimumFractionDigits:n,maximumFractionDigits:n});
+const timeStr=t=>new Date(Number(t)).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+async function get(path){
+  const r=await fetch(BASE+path,{cache:'no-store'});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const j=await r.json();
+  if(j.code!=='0') throw new Error(j.msg||'OKX API 返回错误');
+  return j.data;
+}
+async function loadTicker(){
+  try{
+    const d=await get('ticker?instId=ETH-USDT-SWAP');
+    ticker=d[0];
+    $('price').textContent=fmt(ticker.last);
+    const pct=(Number(ticker.last)-Number(ticker.open24h))/Number(ticker.open24h)*100;
+    $('change').textContent=(pct>=0?'+':'')+fmt(pct,2)+'%';
+    $('change').className='val '+(pct>=0?'up':'down');
+    $('high').textContent=fmt(ticker.high24h);
+    $('low').textContent=fmt(ticker.low24h);
+    $('bidask').textContent=fmt(ticker.bidPx)+' / '+fmt(ticker.askPx);
+    $('vol').textContent=Number(ticker.vol24h).toLocaleString('en-US',{maximumFractionDigits:0});
+    $('updated').textContent='行情更新时间：'+new Date().toLocaleTimeString('zh-CN',{hour12:false})+'（自动刷新）';
+  }catch(e){$('updated').textContent='行情加载失败：'+e.message+'；请稍后刷新或换网络。';$('updated').className='status error'}
+  updateSummary();
+}
+async function loadCandles(){
+  try{
+    const d=await get('candles?instId=ETH-USDT-SWAP&bar='+selectedBar+'&limit=20');
+    candleRows=d;
+    $('candles').innerHTML=d.slice(0,12).map(c=>{
+      const close=Number(c[4]),open=Number(c[1]),cls=close>=open?'up':'down';
+      return `<tr><td>${timeStr(c[0])}${c[8]==='0'?' *':''}</td><td>${fmt(c[1])}</td><td>${fmt(c[2])}</td><td>${fmt(c[3])}</td><td class="${cls}">${fmt(c[4])}</td><td>${Number(c[5]).toLocaleString('en-US',{maximumFractionDigits:0})}</td></tr>`;
+    }).join('');
+    $('candleStatus').textContent='K线更新时间：'+new Date().toLocaleTimeString('zh-CN',{hour12:false})+'。标有 * 的K线尚未确认收盘。';
+  }catch(e){$('candles').innerHTML='<tr><td colspan="6" class="error" style="text-align:left">K线加载失败：'+e.message+'</td></tr>'}
+  updateSummary();
+}
+function updateSummary(){
+  let s='交易对：ETH-USDT-SWAP\n当前时间：'+new Date().toLocaleString('zh-CN')+'\n';
+  if(ticker)s+='最新价：'+ticker.last+' USDT\n24小时涨跌：'+fmt((Number(ticker.last)-Number(ticker.open24h))/Number(ticker.open24h)*100,2)+'%\n24h最高/最低：'+ticker.high24h+' / '+ticker.low24h+'\n买一/卖一：'+ticker.bidPx+' / '+ticker.askPx+'\n';
+  s+='当前K线周期：'+selectedBar+'\n最近K线（时间,开,高,低,收,成交量张数,是否收盘）:\n';
+  s+=candleRows.slice(0,20).map(c=>[timeStr(c[0]),...c.slice(1,6),c[8]==='1'?'已收盘':'未收盘'].join(', ')).join('\n');
+  s+='\n请结合这些行情数据分析ETH多空结构、关键价位、条件式入场与失效条件。';
+  $('summary').textContent=s;
+}
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');selectedBar=b.dataset.bar;loadCandles();
+}));
+$('refresh').addEventListener('click',()=>{loadTicker();loadCandles()});
+$('copy').addEventListener('click',async()=>{
+  updateSummary();
+  try{await navigator.clipboard.writeText($('summary').textContent);$('copyStatus').textContent='已复制。请回到 ChatGPT 粘贴发送。'}
+  catch(e){
+    const range=document.createRange();range.selectNodeContents($('summary'));const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
+    $('copyStatus').textContent='浏览器未允许自动复制。请长按下方“查看将要复制的数据”里的文本并复制。';
+  }
+});
+loadTicker();loadCandles();
+setInterval(loadTicker,5000);setInterval(loadCandles,15000);
+</script>
+</body>
+</html>
